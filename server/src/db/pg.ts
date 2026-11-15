@@ -32,7 +32,7 @@ export function createPgDb(url: string): Db {
   const sql = postgres(url, {
     // Supabase's pooler (Supavisor, port 6543, transaction mode) does not support prepared statements.
     prepare: false,
-    max: Number(process.env.PG_POOL_MAX || 3),
+    max: Number(process.env.PG_POOL_MAX || 10),
     idle_timeout: 20,
     connect_timeout: 15,
     ssl: local ? false : 'require',
@@ -46,24 +46,62 @@ export function createPgDb(url: string): Db {
 
   const conn = (): Sql => txStore.getStore() ?? sql;
 
+  const DEBUG = process.env.DB_DEBUG === '1';
+
   async function query(sqlite: string, params: unknown[]) {
     const t = toPg(sqlite);
+    const started = DEBUG ? Date.now() : 0;
     const rows = await conn().unsafe(t.text, bindParams(params, t.names) as any[]);
+    if (DEBUG && Date.now() - started > 300) console.warn(`[db] slow query ${Date.now() - started}ms: ${t.text.replace(/\s+/g, ' ').slice(0, 140)}`);
     return { rows: rows as unknown as Record<string, unknown>[], count: rows.count, returnsId: t.returnsId };
+  }
+
+  // Short read cache. The app was written for an in-process SQLite file where re-reading a
+  // setting or a usage row 100 times per request was free; over the network each read costs a
+  // round trip. Identical SELECTs within READ_TTL_MS (and identical ones already in flight)
+  // share one result. Any write through this handle clears the cache, and reads inside a
+  // transaction bypass it so they see their own writes.
+  const READ_TTL_MS = Number(process.env.DB_READ_CACHE_MS ?? 2000);
+  const readCache = new Map<string, { at: number; p: Promise<Record<string, unknown>[]> }>();
+  const cacheable = (text: string) => /^\s*(WITH|SELECT)\b/i.test(text) && !/\b(random\(\)|for\s+update|nextval|pg_advisory)/i.test(text);
+
+  async function read(sqlite: string, params: unknown[]): Promise<Record<string, unknown>[]> {
+    const t = toPg(sqlite);
+    if (READ_TTL_MS <= 0 || txStore.getStore() || !cacheable(t.text)) {
+      return (await query(sqlite, params)).rows;
+    }
+    const key = t.text + '\u0000' + JSON.stringify(bindParams(params, t.names), (_k, v) => (typeof v === 'bigint' ? String(v) : v));
+    const now = Date.now();
+    const hit = readCache.get(key);
+    let p: Promise<Record<string, unknown>[]>;
+    if (hit && now - hit.at < READ_TTL_MS) {
+      p = hit.p;
+    } else {
+      if (readCache.size > 500) {
+        for (const [k, v] of readCache) if (now - v.at >= READ_TTL_MS) readCache.delete(k);
+        if (readCache.size > 500) readCache.clear();
+      }
+      p = query(sqlite, params).then((r) => r.rows);
+      readCache.set(key, { at: now, p });
+      p.catch(() => { if (readCache.get(key)?.p === p) readCache.delete(key); });
+    }
+    const rows = await p;
+    // Callers sort/mutate result rows in place; hand each caller its own copy.
+    return rows.map((r) => ({ ...r }));
   }
 
   const db: Db = {
     prepare(sqlite: string): DbStatement {
       return {
         async get(...params) {
-          const { rows } = await query(sqlite, params);
+          const rows = await read(sqlite, params);
           return rows[0];
         },
         async all(...params) {
-          const { rows } = await query(sqlite, params);
-          return rows as unknown[];
+          return (await read(sqlite, params)) as unknown[];
         },
         async run(...params): Promise<RunResult> {
+          readCache.clear();
           const { rows, count, returnsId } = await query(sqlite, params);
           const out: RunResult = { changes: Number(count ?? 0) };
           if (returnsId && rows[0] && rows[0].id !== undefined) out.lastInsertRowid = Number(rows[0].id);
@@ -72,6 +110,7 @@ export function createPgDb(url: string): Db {
       };
     },
     async exec(raw: string) {
+      readCache.clear();
       await conn().unsafe(raw);
     },
     transaction(fn) {

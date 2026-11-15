@@ -105,6 +105,24 @@ function rewriteScalarMinMax(sql: string): string {
   });
 }
 
+
+/** Rewrite every `name(ARGS)` call using fn(ARGS) (paren-aware, outside string literals). */
+function rewriteCall(sql: string, name: string, fn: (args: string) => string): string {
+  const re = new RegExp(`\\b${name}\\s*\\(`, 'gi');
+  let out = sql;
+  let m: RegExpExecArray | null;
+  let guard = 0;
+  while ((m = re.exec(out)) && guard++ < 200) {
+    const open = m.index + m[0].length - 1;
+    const close = matchParen(out, open);
+    if (close < 0) break;
+    const replaced = fn(out.slice(open + 1, close));
+    out = out.slice(0, m.index) + replaced + out.slice(close + 1);
+    re.lastIndex = m.index + replaced.length;
+  }
+  return out;
+}
+
 function rewriteDatesAndFunctions(sql: string): string {
   let s = sql;
   // datetime('now', 'start of month' | 'start of day')
@@ -130,6 +148,9 @@ function rewriteDatesAndFunctions(sql: string): string {
   s = s.replace(/julianday\(\s*'now'\s*\)/gi, () => `(extract(epoch from ${NOW_UTC})/86400.0)`);
   s = s.replace(/julianday\(\s*([A-Za-z_][\w.]*)\s*\)/gi,
     (_m, c) => `(extract(epoch from (${c})::timestamp)/86400.0)`);
+  // JSON helpers: our JSON columns are TEXT, Postgres wants json for these.
+  s = rewriteCall(s, 'json_array_length', (a) => `json_array_length((${a})::json)`);
+  s = rewriteCall(s, 'json_group_array', (a) => `(json_agg(${a}))::text`);
   return s;
 }
 
