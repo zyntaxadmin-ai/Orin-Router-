@@ -296,7 +296,7 @@ analyticsRouter.get('/by-model', async (req: Request, res: Response) => {
       r.platform,
       ${ENDPOINT_ID_SQL} as base_url,
       r.model_id,
-      m.display_name,
+      MAX(m.display_name) as display_name,
       COUNT(*) as requests,
       -- Rate over success+error only: 'canceled' (#752) is neither.
       SUM(CASE WHEN r.status = 'success' THEN 1 ELSE 0 END) * 100.0 / NULLIF(SUM(CASE WHEN r.status <> 'canceled' THEN 1 ELSE 0 END), 0) as success_rate,
@@ -463,8 +463,8 @@ analyticsRouter.get('/by-key', async (req: Request, res: Response) => {
   const rows = (await db.prepare(`
     SELECT
       r.key_id as key_id,
-      k.label as label,
-      k.platform as platform,
+      MAX(k.label) as label,
+      MAX(k.platform) as platform,
       COUNT(*) as requests,
       SUM(CASE WHEN r.status = 'success' THEN 1 ELSE 0 END) * 100.0 / NULLIF(SUM(CASE WHEN r.status <> 'canceled' THEN 1 ELSE 0 END), 0) as success_rate,
       AVG(r.latency_ms) as avg_latency_ms,
@@ -554,7 +554,7 @@ analyticsRouter.get('/error-distribution', async (req: Request, res: Response) =
   const rows = (await db.prepare(`
     SELECT
       platform,
-      model_id,
+      MIN(model_id) AS model_id,
       CASE
         WHEN lower(error) LIKE '%429%' OR lower(error) LIKE '%rate limit%' OR lower(error) LIKE '%too many%' OR lower(error) LIKE '%quota%' THEN 'Rate Limited (429)'
         WHEN lower(error) LIKE '%401%' OR lower(error) LIKE '%unauthorized%' OR lower(error) LIKE '%invalid api key%' OR lower(error) LIKE '%invalid_api_key%' OR lower(error) LIKE '%incorrect api key%' THEN 'Auth Error (401)'

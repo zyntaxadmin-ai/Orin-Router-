@@ -763,7 +763,7 @@ async function sumPersistedProviderTokens(
   return await withDb(async db => {
     const rows = (await db.prepare(`
       SELECT rlu.model_id, COALESCE(SUM(rlu.tokens), 0) AS used,
-             m.tpd_limit, m.monthly_token_budget
+             MAX(m.tpd_limit) AS tpd_limit, MAX(m.monthly_token_budget) AS monthly_token_budget
         FROM rate_limit_usage rlu
         LEFT JOIN models m ON m.platform = rlu.platform AND m.model_id = rlu.model_id
        WHERE rlu.platform = ?
