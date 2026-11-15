@@ -602,7 +602,7 @@ const isLoopbackRemote = (req: Request): boolean => isLoopbackRequest(req);
 // bind 0.0.0.0 through its LAN-access toggle, and a remote viewer on that LAN
 // still has to prove the password before it can lift a key.
 function skipsReauth(req: Request): boolean {
-  return true; // single-user build: no password re-entry
+  return process.env.FREEAPI_DESKTOP === '1' && isLoopbackRemote(req);
 }
 
 // Re-verify the dashboard password for a plaintext-key endpoint (export,

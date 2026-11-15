@@ -202,11 +202,11 @@ authRouter.post('/setup', async (req: Request, res: Response) => {
   // claim the dashboard without any code. A remote caller must present the
   // one-time setup code logged at boot, so an exposed fresh install can't be
   // claimed by a stranger who finds it first.
-  if (!isLoopbackRemote(req) && !setupCodeMatches((req.body ?? {}).setupCode)) {
+  if (!setupCodeMatches((req.body ?? {}).setupCode)) {
     res.status(403).json({
       error: {
-        message: 'A setup code is required to create the first account from a remote device. ' +
-          'Check the server logs for the code, or open the dashboard from a browser on the machine running FreeLLMAPI.',
+        message: 'Enter the setup code to create the first account. It is the SETUP_CODE environment variable ' +
+          'you set in Vercel (if it is not set, add it under Settings → Environment Variables and redeploy).',
         type: 'setup_code_required',
       },
     });

@@ -1,47 +1,32 @@
-import { createOneTimeCode } from './one-time-code.js';
+import crypto from 'crypto';
 
-// One-time password-reset code.
+// Password-reset code for the serverless build.
 //
-// POST /api/auth/forgot-password mints a reset code and logs it. The operator
-// reads the code from the server logs and enters it on the reset form to set a
-// new password without an active session. Requesting a new code invalidates any
-// previous one. The code is cleared after a successful reset.
+// A random per-request code held in memory cannot work on Vercel (the next request may run
+// on a different instance), so resetting a forgotten password uses the same secret you
+// chose for first-run setup: the SETUP_CODE environment variable.
 
-const _code = createOneTimeCode();
-const RESET_CODE_TTL_MS = 15 * 60 * 1000; // 15 minutes
-let mintedAtMs = 0;
+function configured(): string {
+  return (process.env.SETUP_CODE ?? '').trim();
+}
 
-// Mint a fresh reset code and log it prominently, with the account email: the
-// operator who forgot the password may have forgotten which email signs in
-// too (#1477), and whoever can read this log can already reset the account.
-// Returns the code.
-export function generateResetCode(accountEmail?: string | null): string {
-  const code = _code.generate();
-  mintedAtMs = Date.now();
-  console.log('');
-  console.log('  Password-reset code: ' + code);
-  if (accountEmail) console.log('  Account email: ' + accountEmail);
-  console.log('  Enter this code on the reset form to set a new password.');
-  console.log('');
-  return code;
+export function generateResetCode(_accountEmail?: string | null): string {
+  return '';
 }
 
 export function getResetCode(): string | null {
-  return _code.get();
+  return configured() || null;
 }
 
 export function clearResetCode(): void {
-  _code.clear();
-  mintedAtMs = 0;
+  // Stateless: nothing to clear.
 }
 
-// Constant-time comparison against the active code. Returns false when no code
-// is active or the input is not a matching string.
+// Constant-time comparison against SETUP_CODE.
 export function resetCodeMatches(provided: unknown): boolean {
-  if (!mintedAtMs) return false;
-  if (Date.now() - mintedAtMs > RESET_CODE_TTL_MS) {
-    clearResetCode();
-    return false;
-  }
-  return _code.matches(provided);
+  const expected = configured();
+  if (!expected || typeof provided !== 'string') return false;
+  const a = crypto.createHash('sha256').update(provided.trim()).digest();
+  const b = crypto.createHash('sha256').update(expected).digest();
+  return crypto.timingSafeEqual(a, b);
 }
