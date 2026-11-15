@@ -113,8 +113,8 @@ export interface BreakerState {
   consecutive: number;
 }
 
-export async function newBreaker(limit: number = (await getMaxConsecutiveUpstreamFails())): Promise<BreakerState> {
-  return { limit, consecutive: 0 };
+export async function newBreaker(limit?: number): Promise<BreakerState> {
+  return { limit: limit ?? (await getMaxConsecutiveUpstreamFails()), consecutive: 0 };
 }
 
 /**

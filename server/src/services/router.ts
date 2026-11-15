@@ -1562,8 +1562,8 @@ async function quotaWeightingApplies(entry: ChainRow): Promise<boolean> {
  * Every gate, the custom-endpoint filter and the skip tally stay in the one
  * walk that follows.
  */
-function orderKeysByRemainingQuota(entry: ChainRow, ordered: KeyRow[]): KeyRow[] {
-  const headroom = getKeyQuotaHeadroom(entry.platform as Platform);
+async function orderKeysByRemainingQuota(entry: ChainRow, ordered: KeyRow[]): Promise<KeyRow[]> {
+  const headroom = await getKeyQuotaHeadroom(entry.platform as Platform);
   if (headroom.size === 0) return ordered;
   // Hoisted out of the comparator: sort calls it O(n log n) times, and the
   // lookup below must not re-derive anything per comparison.
@@ -1662,7 +1662,7 @@ async function selectKeyForModel(entry: ChainRow, estimatedTokens: number, skipK
   // ties fall back to that order instead of to rowid.
   if (keys.length > 1 && (await quotaWeightingApplies(entry))) {
     const base = ranked ?? Array.from({ length: keys.length }, (_, i) => keys[(idx + i) % keys.length]);
-    ranked = orderKeysByRemainingQuota(entry, base);
+    ranked = (await orderKeysByRemainingQuota(entry, base));
   }
 
   // A custom model belongs to exactly one endpoint (#212), but an endpoint can

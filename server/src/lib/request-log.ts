@@ -4,7 +4,7 @@ import { noteBudgetAlerts } from '../services/budget-alerts.js';
 import { getClientContext } from './client-context.js';
 import { noteRequestRowId, type RequestTrace } from './attempt-trace.js';
 
-type LogTx = ReturnType<typeof getDb>;
+type LogTx = Awaited<ReturnType<typeof getDb>>;
 
 // SQLite stores created_at as 'YYYY-MM-DD HH:MM:SS' (UTC). Truncate to hour
 // for the aggregate upsert. Duplicated from the migration helper so this

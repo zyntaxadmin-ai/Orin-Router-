@@ -164,8 +164,9 @@ function entryFor(row: QuotaObservationView, ratePerMin: number | null, now: num
 // sharing one account pool reports the same window per key, and the number that
 // matters for "can I keep calling" is the least headroom left.
 export async function getQuotaForecast(
-  rows = getQuotaStateForKeys(), now = Date.now(),
+  rowsArg?: Awaited<ReturnType<typeof getQuotaStateForKeys>>, now = Date.now(),
 ): Promise<QuotaForecastEntry[]> {
+  const rows = rowsArg ?? (await getQuotaStateForKeys());
   const byKey = new Map<string, QuotaForecastEntry>();
   const activity = rows.length ? (await getRecentQuotaActivity(now)) : [];
   const counts = new Map<string, number>();

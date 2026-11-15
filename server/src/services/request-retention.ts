@@ -39,7 +39,7 @@ const DEFAULT_SEARCH_MAX_ROWS = 100_000;
 const DEFAULT_DECISION_RETENTION_DAYS = 90;
 const DEFAULT_DECISION_MAX_ROWS = 100_000;
 
-type RetentionDb = ReturnType<typeof getDb>;
+type RetentionDb = Awaited<ReturnType<typeof getDb>>;
 
 export interface RequestAnalyticsRetentionConfig {
   retentionDays: number;

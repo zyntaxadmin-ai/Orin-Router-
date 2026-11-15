@@ -7,7 +7,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { getDb } from '../db/index.js';
+import { getDb, type Db } from '../db/index.js';
 import { monthlyBudgetScore } from '../lib/budget.js';
 
 export const profilesRouter = Router();
@@ -189,7 +189,7 @@ profilesRouter.post('/', async (req: Request, res: Response) => {
         ORDER BY priority ASC
       `).run(profileId, sourceProfileId);
     } else {
-      copyFromDefault(db, profileId);
+      await copyFromDefault(db, profileId);
     }
   }
 
@@ -197,8 +197,8 @@ profilesRouter.post('/', async (req: Request, res: Response) => {
   res.status(201).json(created);
 });
 
-function copyFromDefault(db: any, profileId: number) {
-  db.prepare(`
+async function copyFromDefault(db: Db, profileId: number) {
+  await db.prepare(`
     INSERT INTO profile_models (profile_id, model_db_id, priority, enabled)
     SELECT ?, model_db_id, priority, enabled
     FROM fallback_config
@@ -267,7 +267,7 @@ profilesRouter.put('/:id', async (req: Request, res: Response) => {
 
   // If auto_sort was updated to a preset, automatically physically sort the models in DB
   if (parsed.data.auto_sort) {
-    sortProfileModels(db, profileId, parsed.data.auto_sort);
+    await sortProfileModels(db, profileId, parsed.data.auto_sort);
   }
 
   const updated = await db.prepare('SELECT id, name, emoji, color, type, is_favorite, sort_order, auto_sort, routing_strategy, layout_config, auto_include_new_models, created_at FROM profiles WHERE id = ?').get(profileId);
@@ -389,11 +389,11 @@ const SORT_PRESETS: Record<string, string> = {
   speed: 'm.speed_rank ASC',
 };
 
-function sortProfileModels(db: any, profileId: number, preset: string) {
+async function sortProfileModels(db: Db, profileId: number, preset: string) {
   let models: { id: number }[] = [];
 
   if (preset === 'budget') {
-    const allModels = db.prepare(`SELECT id, monthly_token_budget, tpd_limit FROM models`).all() as any[];
+    const allModels = (await db.prepare(`SELECT id, monthly_token_budget, tpd_limit FROM models`).all()) as any[];
     allModels.sort((a, b) => monthlyBudgetScore(b) - monthlyBudgetScore(a));
     models = allModels.map(m => ({ id: m.id }));
   } else {
@@ -404,25 +404,25 @@ function sortProfileModels(db: any, profileId: number, preset: string) {
     if (!orderBy) {
       throw new Error(`Unknown preset: ${preset}. Use: intelligence, speed, budget`);
     }
-    models = db.prepare(`SELECT m.id FROM models m ORDER BY ${orderBy}`).all() as { id: number }[];
+    models = (await db.prepare(`SELECT m.id FROM models m ORDER BY ${orderBy}`).all()) as { id: number }[];
   }
 
   // Preserve existing enabled flags so sorting doesn't reset disabled models
-  const existing = db.prepare(`
+  const existing = (await db.prepare(`
     SELECT model_db_id, enabled FROM profile_models WHERE profile_id = ?
-  `).all(profileId) as { model_db_id: number; enabled: number }[];
+  `).all(profileId)) as { model_db_id: number; enabled: number }[];
   const enabledMap = new Map(existing.map(e => [e.model_db_id, e.enabled]));
 
-  const transaction = db.transaction(() => {
-    db.prepare('DELETE FROM profile_models WHERE profile_id = ?').run(profileId);
+  const transaction = db.transaction(async () => {
+    await db.prepare('DELETE FROM profile_models WHERE profile_id = ?').run(profileId);
     const insert = db.prepare('INSERT INTO profile_models (profile_id, model_db_id, priority, enabled) VALUES (?, ?, ?, ?)');
     for (let i = 0; i < models.length; i++) {
       // Use existing enabled state if available, default to 1 for newly added models
       const enabled = enabledMap.has(models[i].id) ? enabledMap.get(models[i].id) : 1;
-      insert.run(profileId, models[i].id, i + 1, enabled);
+      await insert.run(profileId, models[i].id, i + 1, enabled);
     }
   });
-  transaction();
+  await transaction();
 }
 
 profilesRouter.post('/:id/sort/:preset', async (req: Request, res: Response) => {
@@ -437,7 +437,7 @@ profilesRouter.post('/:id/sort/:preset', async (req: Request, res: Response) => 
   const preset = String(req.params.preset);
   
   try {
-    sortProfileModels(db, profileId, preset);
+    await sortProfileModels(db, profileId, preset);
     res.json({ success: true, preset });
   } catch (error: any) {
     res.status(400).json({ error: { message: error.message } });
@@ -445,8 +445,8 @@ profilesRouter.post('/:id/sort/:preset', async (req: Request, res: Response) => 
 });
 
 // Initialize built-in profiles if they don't exist
-export function seedProfiles(db: any): void {
-  const count = db.prepare("SELECT COUNT(*) as cnt FROM profiles WHERE type = 'default' OR type = 'builtin'").get() as { cnt: number };
+export async function seedProfiles(db: Db): Promise<void> {
+  const count = (await db.prepare("SELECT COUNT(*) as cnt FROM profiles WHERE type = 'default' OR type = 'builtin'").get()) as { cnt: number };
   if (count.cnt > 0) return;
 
   const builtins: Array<{
@@ -472,12 +472,12 @@ export function seedProfiles(db: any): void {
   const insertProfile = db.prepare('INSERT INTO profiles (name, emoji, color, type, sort_order) VALUES (?, ?, ?, ?, ?)');
   const insertModel = db.prepare('INSERT INTO profile_models (profile_id, model_db_id, priority, enabled) VALUES (?, ?, ?, ?)');
 
-  const seed = db.transaction(() => {
+  const seed = db.transaction(async () => {
     for (const builtin of builtins) {
-      const result = insertProfile.run(builtin.name, builtin.emoji, builtin.color, builtin.profileType, -1);
+      const result = await insertProfile.run(builtin.name, builtin.emoji, builtin.color, builtin.profileType, -1);
       const profileId = result.lastInsertRowid as number;
 
-      const models = db.prepare('SELECT id, LOWER(display_name) as name FROM models ORDER BY id ASC').all() as { id: number; name: string }[];
+      const models = (await db.prepare('SELECT id, LOWER(display_name) as name FROM models ORDER BY id ASC').all()) as { id: number; name: string }[];
 
       const scored = models.map(m => {
         let score = 0;
@@ -496,17 +496,17 @@ export function seedProfiles(db: any): void {
       });
 
       for (let i = 0; i < scored.length; i++) {
-        insertModel.run(profileId, scored[i].id, i + 1, 1);
+        await insertModel.run(profileId, scored[i].id, i + 1, 1);
       }
 
       // Set the default active profile
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO settings (key, value) VALUES ('active_profile_id', ?)
         ON CONFLICT(key) DO UPDATE SET value = excluded.value
       `).run(String(profileId));
     }
   });
-  seed();
+  await seed();
 
   console.log(`Seeded Default profile`);
 }

@@ -13,7 +13,7 @@ interface Window {
 
 // Key format: "platform:modelId:keyId:type" where type is rpm|rpd|tpm|tpd
 const windows = new Map<string, Window>();
-type RateLimitDb = ReturnType<typeof getDb>;
+type RateLimitDb = Awaited<ReturnType<typeof getDb>>;
 type UsageKind = 'request' | 'tokens';
 
 function getWindow(key: string): Window {

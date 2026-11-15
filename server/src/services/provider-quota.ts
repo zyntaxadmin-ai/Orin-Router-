@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { getDb } from '../db/index.js';
+import { getDb, type Db } from '../db/index.js';
 // Single shared Retry-After parser (was duplicated here and in providers/base.ts).
 import { parseRetryAfterMs } from '../providers/base.js';
 import type {
@@ -287,7 +287,7 @@ function extractContext(opts: Pick<QuotaObservationInput, 'platform' | 'modelId'
 
 function maybeAddObservation(
   observations: QuotaObservationInput[],
-  base: NonNullable<ReturnType<typeof extractContext>>,
+  base: NonNullable<Awaited<ReturnType<typeof extractContext>>>,
   metric: QuotaMetric,
   limitRaw: string | null,
   remainingRaw: string | null | undefined,
@@ -380,7 +380,7 @@ export function parseQuotaObservationsFromResponse(
   return observations;
 }
 
-export function recordQuotaObservation(input: QuotaObservationInput): ProviderQuotaObservation | null {
+export async function recordQuotaObservation(input: QuotaObservationInput): Promise<ProviderQuotaObservation | null> {
   const context = getQuotaObservationContext();
   const platform = input.platform ?? context?.platform;
   if (!platform) return null;
@@ -402,7 +402,7 @@ export function recordQuotaObservation(input: QuotaObservationInput): ProviderQu
   const endpoint = input.endpoint ?? context?.endpoint ?? null;
   const statusCode = input.statusCode ?? null;
   const rawJson = input.rawJson ?? null;
-  let db;
+  let db: Db;
   try {
     db = getDb();
   } catch {
@@ -412,8 +412,8 @@ export function recordQuotaObservation(input: QuotaObservationInput): ProviderQu
   const nowSql = toSqliteUtc(observedAt);
   const updatedAt = nowSql;
 
-  db.transaction(() => {
-    db.prepare(`
+  await db.transaction(async () => {
+    await db.prepare(`
       INSERT INTO provider_quota_state (
         platform, key_id, quota_pool_key, metric, limit_value, remaining_value,
         reset_at, reset_strategy, source, confidence, notes, observed_at, updated_at
@@ -437,7 +437,7 @@ export function recordQuotaObservation(input: QuotaObservationInput): ProviderQu
       platform, keyId, quotaPoolKey, metric, limitValue, remainingValue, resetAt, resetStrategy, source, confidence, notes, nowSql, updatedAt,
     );
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO provider_quota_observations (
         id, platform, key_id, provider_account_id, model_id, quota_pool_key, metric,
         status_code, limit_value, remaining_value, reset_at, retry_after_ms,
@@ -515,8 +515,8 @@ const headroomCache = new Map<string, { db: unknown; at: number; map: Map<number
  * constraint is what 429s, so a key with 90% of its requests but 2% of its
  * tokens left has 2% of headroom, not 90%.
  */
-export function getKeyQuotaHeadroom(platform: Platform): Map<number, number> {
-  let db;
+export async function getKeyQuotaHeadroom(platform: Platform): Promise<Map<number, number>> {
+  let db: Db;
   try {
     db = getDb();
   } catch {
@@ -526,7 +526,7 @@ export function getKeyQuotaHeadroom(platform: Platform): Map<number, number> {
   const cached = headroomCache.get(platform);
   if (cached && cached.db === db && now - cached.at < HEADROOM_TTL_MS) return cached.map;
 
-  const rows = db.prepare(`
+  const rows = (await db.prepare(`
     SELECT key_id AS keyId,
            limit_value AS limitValue,
            remaining_value AS remainingValue,
@@ -538,7 +538,7 @@ export function getKeyQuotaHeadroom(platform: Platform): Map<number, number> {
        AND limit_value IS NOT NULL
        AND limit_value > 0
        AND remaining_value IS NOT NULL
-  `).all(platform, HEADROOM_MIN_CONFIDENCE) as {
+  `).all(platform, HEADROOM_MIN_CONFIDENCE)) as {
     keyId: number; limitValue: number; remainingValue: number; expired: number;
   }[];
 
@@ -564,8 +564,8 @@ export function invalidateKeyQuotaHeadroom(platform?: Platform): void {
   else headroomCache.clear();
 }
 
-export function getQuotaStateForKeys(options: { normalizeExpired?: boolean } = {}): QuotaObservationView[] {
-  let db;
+export async function getQuotaStateForKeys(options: { normalizeExpired?: boolean } = {}): Promise<QuotaObservationView[]> {
+  let db: Db;
   try {
     db = getDb();
   } catch {
@@ -577,7 +577,7 @@ export function getQuotaStateForKeys(options: { normalizeExpired?: boolean } = {
   // (platform, key_id, quota_pool_key, metric, observed_at DESC, created_at
   // DESC) and stops at the first entry. The window-function form it replaces
   // ranked the entire table, raw_json included, on every dashboard poll.
-  const rows = db.prepare(`
+  const rows = (await db.prepare(`
     SELECT
       pqs.platform,
       pqs.key_id AS keyId,
@@ -616,7 +616,7 @@ export function getQuotaStateForKeys(options: { normalizeExpired?: boolean } = {
          LIMIT 1
       )
     ORDER BY pqs.platform ASC, pqs.key_id ASC, pqs.quota_pool_key ASC, pqs.metric ASC
-  `).all() as QuotaObservationView[];
+  `).all()) as QuotaObservationView[];
   if (options.normalizeExpired === false) return rows;
   // Legacy callers can still display replenished headroom, but never overwrite
   // the actual observation: the outlook must retain its age and reported value.

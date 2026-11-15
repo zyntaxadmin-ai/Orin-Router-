@@ -712,7 +712,7 @@ export class OpenAICompatProvider extends BaseProvider {
       const limit = pick(spec.limitFields);
       const remaining = pick(spec.remainingFields);
       if (limit === null && remaining === null) return false;
-      const record = recordQuotaObservation({
+      const record = await recordQuotaObservation({
         platform: this.platform,
         keyId: quotaContext?.keyId,
         providerAccountId: quotaContext?.providerAccountId,

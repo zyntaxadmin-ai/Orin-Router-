@@ -57,7 +57,7 @@ healthRouter.get('/', async (_req: Request, res: Response) => {
       lastHealthyAt: k.last_healthy_at ?? null,
       lastHealthError: k.last_health_error,
     })),
-    quotaStates: getQuotaStateForKeys(),
+    quotaStates: (await getQuotaStateForKeys()),
     degradation: (await getDegradationStatus()),
     // false means the encryption key no longer matches the stored ciphertext,
     // so every key below fails with a decrypt error for the same reason.
@@ -111,7 +111,7 @@ healthRouter.post('/quota/:keyId', async (req: Request, res: Response) => {
   // pollKeyQuota is failure-silent by design; its boolean tells us whether a
   // quota_api row was written, and the state query returns the fresh reading.
   const recorded = await pollKeyQuota(keyId, row, provider);
-  const state = getQuotaStateForKeys().filter(
+  const state = (await getQuotaStateForKeys()).filter(
     q => q.keyId === keyId && q.source === 'quota_api',
   );
   res.json({ keyId, recorded, quotaStates: state });

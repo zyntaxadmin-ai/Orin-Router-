@@ -41,7 +41,7 @@ interface Reservation { keyId: number; tokens: number }
 // These requests belong to this process and remain reserved until completion,
 // even if a stream outlives the short rate-limit lease timeout. A restarted
 // process has no active requests; completed usage remains in SQLite.
-const reservations = new WeakMap<ReturnType<typeof getDb>, Set<Reservation>>();
+const reservations = new WeakMap<Awaited<ReturnType<typeof getDb>>, Set<Reservation>>();
 
 function activeReservations(): Set<Reservation> {
   const db = getDb();

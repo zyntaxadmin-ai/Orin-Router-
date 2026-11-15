@@ -92,7 +92,7 @@ export async function rimeTranscription(model: string, key: string | null, p: Tr
   const socket = await openProviderWebSocket('wss://stt.api.rime.ai/ws', 'rime', { protocols: ['rime.v1.json'], headers: { Authorization: `Bearer ${key}` } });
   return new Promise((resolve, reject) => {
     let settled = false, started = false;
-    let pump: ReturnType<typeof setTimeout> | undefined;
+    let pump: Awaited<ReturnType<typeof setTimeout>> | undefined;
     const finish = (error?: RimeMediaError, text = '') => {
       if (settled) return;
       settled = true; clearTimeout(timer); clearTimeout(pump);

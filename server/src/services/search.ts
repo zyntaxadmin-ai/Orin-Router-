@@ -634,7 +634,8 @@ const listOf = (names: string[], joiner: 'and' | 'or'): string =>
 
 /** The "nothing to search with" message, built from what is installed: it
  *  names only engines this catalog has, and says why a saved key cannot run. */
-export async function noSearchMessage(s: SearchStatus = (await searchStatus())): Promise<string> {
+export async function noSearchMessage(status?: SearchStatus): Promise<string> {
+  const s: SearchStatus = status ?? (await searchStatus());
   const parts: string[] = [];
   if (s.missing_from_catalog.length > 0) {
     const names = s.missing_from_catalog.map(platformName);

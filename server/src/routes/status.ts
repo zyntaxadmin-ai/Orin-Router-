@@ -165,7 +165,7 @@ providersRouter.get('/providers', async (req: Request, res: Response) => {
   // Best-effort request-quota headroom from observed quota state. Only surfaced
   // when a provider actually reported a `requests` limit; absent otherwise.
   const requestsRemainingByPlatform = new Map<string, number>();
-  for (const q of getQuotaStateForKeys()) {
+  for (const q of (await getQuotaStateForKeys())) {
     if (q.metric !== 'requests' || typeof q.limit !== 'number' || q.limit <= 0) continue;
     if (typeof q.remaining !== 'number') continue;
     const pct = Math.max(0, Math.min(100, Math.round((q.remaining / q.limit) * 100)));

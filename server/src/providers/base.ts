@@ -377,7 +377,7 @@ export abstract class BaseProvider {
 
     // timeoutMs <= 0 means "no timeout" (PROVIDER_TIMEOUT_<PLATFORM>=0).
     // setTimeout(abort, 0) would abort every request on the next macrotask.
-    let headerTimer: ReturnType<typeof setTimeout> | undefined;
+    let headerTimer: Awaited<ReturnType<typeof setTimeout>> | undefined;
     if (timeoutMs > 0) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -436,7 +436,7 @@ export abstract class BaseProvider {
     timeoutMessage?: string,
   ): Promise<T> {
     if (inactivityTimeoutMs <= 0) return await read();
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timer: Awaited<ReturnType<typeof setTimeout>> | undefined;
     return Promise.race([
       read(),
       new Promise<never>((_, reject) => {

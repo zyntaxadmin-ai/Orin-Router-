@@ -67,7 +67,7 @@ const METRIC_PREFERENCE: QuotaMetric[] = ['tokens', 'credits', 'neurons', 'reque
  * separate allowances: remaining/limit are SUMMED across keys, never
  * latest-wins (which reported one account's headroom as if it were the total).
  */
-function summarizeQuota(rows: ReturnType<typeof getQuotaStateForKeys>): PoolQuota | null {
+function summarizeQuota(rows: Awaited<ReturnType<typeof getQuotaStateForKeys>>): PoolQuota | null {
   if (rows.length === 0) return null;
   const byMetric = new Map<QuotaMetric, typeof rows>();
   for (const row of rows) {
@@ -173,8 +173,8 @@ freeTierRouter.get('/', async (_req: Request, res: Response) => {
   }
 
   // Quota observations grouped per pool, then reduced per pool (see above).
-  const quotaRows = new Map<string, ReturnType<typeof getQuotaStateForKeys>>();
-  for (const q of getQuotaStateForKeys()) {
+  const quotaRows = new Map<string, Awaited<ReturnType<typeof getQuotaStateForKeys>>>();
+  for (const q of (await getQuotaStateForKeys())) {
     const key = q.quotaPoolKey || `${q.platform}::account`;
     const list = quotaRows.get(key);
     if (list) list.push(q);

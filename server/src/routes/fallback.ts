@@ -350,7 +350,7 @@ const updateSchema = z.array(z.object({
  * turn an INSERT into a foreign-key failure (the old UPDATE simply matched
  * nothing).
  */
-async function knownModelIds(db: ReturnType<typeof getDb>): Promise<Set<number>> {
+async function knownModelIds(db: Awaited<ReturnType<typeof getDb>>): Promise<Set<number>> {
   return new Set(((await db.prepare('SELECT id FROM models').all()) as { id: number }[]).map(m => m.id));
 }
 

@@ -330,7 +330,7 @@ export async function triggerBuiltinModelDiscovery(
   db: Db,
   platform: string,
   reason: 'key_added' | 'healthy',
-): Promise<BuiltinDiscoveryResult> | null {
+): Promise<BuiltinDiscoveryResult | null> {
   if (builtinDiscoveryMode() !== 'auto') return null;
   if (!(await isBuiltinDiscoveryEligible(db, platform))) return null;
   const pending = inFlight.get(platform);
