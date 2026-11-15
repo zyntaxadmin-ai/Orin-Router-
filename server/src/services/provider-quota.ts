@@ -479,13 +479,14 @@ export async function recordQuotaObservation(input: QuotaObservationInput): Prom
   };
 }
 
-export function recordQuotaObservationsFromResponse(
+export async function recordQuotaObservationsFromResponse(
   response: Response,
   opts: Pick<QuotaObservationInput, 'platform' | 'modelId' | 'quotaPoolKey' | 'keyId' | 'providerAccountId' | 'endpoint'> = {},
-): ProviderQuotaObservation[] {
-  return parseQuotaObservationsFromResponse(response, opts)
-    .map(recordQuotaObservation)
-    .filter((row): row is ProviderQuotaObservation => row !== null);
+): Promise<ProviderQuotaObservation[]> {
+  const rows = await Promise.all(
+    parseQuotaObservationsFromResponse(response, opts).map((input) => recordQuotaObservation(input)),
+  );
+  return rows.filter((row): row is ProviderQuotaObservation => row !== null);
 }
 
 // The router needs a smaller view than the panel's joined observation rows:
