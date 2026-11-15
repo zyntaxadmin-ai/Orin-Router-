@@ -34,6 +34,7 @@ import { urlTokenRouter } from './routes/url-tokens.js';
 import { moderationRouter } from './routes/moderation.js';
 import { requireAuth } from './middleware/requireAuth.js';
 import { initDb } from './db/index.js';
+import { statsStore } from './db/pg.js';
 import { cronRouter } from './routes/cron.js';
 import { createHostGuard } from './middleware/allowed-hosts.js';
 import { createProxyRateLimiter, createAdminRateLimiter } from './middleware/rateLimit.js';
@@ -121,6 +122,17 @@ export function createApp(config?: Config) {
   app.use(async (_req, _res, next) => {
     try { await initDb(); next(); } catch (err) { next(err); }
   });
+  // DB_DEBUG=1: log how many queries each request made and how long they took in total.
+  if (process.env.DB_DEBUG === '1') {
+    app.use((req, res, next) => {
+      const st = { queries: 0, dbMs: 0 };
+      const started = Date.now();
+      res.on('finish', () => {
+        if (st.queries > 0) console.log(`[db] ${req.method} ${req.path}: ${st.queries} queries, ${st.dbMs}ms in db, ${Date.now() - started}ms total`);
+      });
+      statsStore.run(st, next);
+    });
+  }
   const allowedCorsOrigins = new Set([
     ...DEFAULT_DASHBOARD_ORIGINS,
     ...cfg.dashboardOrigins,

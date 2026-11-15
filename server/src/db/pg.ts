@@ -8,6 +8,9 @@ type Sql = postgres.Sql<any> | postgres.TransactionSql<any>;
 // The transaction (if any) the current async call chain is running in.
 const txStore = new AsyncLocalStorage<Sql>();
 
+/** Per-request DB counters (only populated when the app wraps a request in statsStore.run). */
+export const statsStore = new AsyncLocalStorage<{ queries: number; dbMs: number }>();
+
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v) && !Buffer.isBuffer(v) && !(v instanceof Date);
 }
@@ -50,8 +53,10 @@ export function createPgDb(url: string): Db {
 
   async function query(sqlite: string, params: unknown[]) {
     const t = toPg(sqlite);
-    const started = DEBUG ? Date.now() : 0;
+    const started = Date.now();
     const rows = await conn().unsafe(t.text, bindParams(params, t.names) as any[]);
+    const st = statsStore.getStore();
+    if (st) { st.queries++; st.dbMs += Date.now() - started; }
     if (DEBUG && Date.now() - started > 300) console.warn(`[db] slow query ${Date.now() - started}ms: ${t.text.replace(/\s+/g, ' ').slice(0, 140)}`);
     return { rows: rows as unknown as Record<string, unknown>[], count: rows.count, returnsId: t.returnsId };
   }
