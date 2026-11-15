@@ -1,0 +1,20 @@
+{
+  "installCommand": "npm install",
+  "buildCommand": "npm run build",
+  "outputDirectory": "client/dist",
+  "functions": {
+    "api/index.mjs": { "maxDuration": 300, "includeFiles": "server/dist/**" }
+  },
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/index.mjs" },
+    { "source": "/v1/:path*", "destination": "/api/index.mjs" },
+    { "source": "/v1beta/:path*", "destination": "/api/index.mjs" },
+    { "source": "/mcp", "destination": "/api/index.mjs" },
+    { "source": "/livez", "destination": "/api/index.mjs" },
+    { "source": "/readyz", "destination": "/api/index.mjs" },
+    { "source": "/((?!assets/).*)", "destination": "/index.html" }
+  ],
+  "crons": [
+    { "path": "/api/cron/health", "schedule": "0 6 * * *" }
+  ]
+}
