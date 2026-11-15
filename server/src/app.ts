@@ -207,10 +207,29 @@ export function createApp(config?: Config) {
 
     next();
   });
-  app.use(cors({
-    origin(origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
-      callback(null, !origin || allowedCorsOrigins.has(origin));
-    },
+  // CORS has two tiers. The wire APIs (/v1, /v1beta, /mcp) authenticate with an
+  // explicit API key in the Authorization header, never a cookie, so any origin
+  // may call them from a browser (third-party chat UIs, playgrounds) without
+  // opening a CSRF path; credentials stay off. Everything else, i.e. the
+  // dashboard admin API, only answers the allow-listed dashboard origins.
+  const WIRE_API_PATH_RE = /^\/(v1|v1beta|mcp)(\/|$)/;
+  const WIRE_API_EXPOSED_HEADERS = [
+    'x-request-id', 'x-routed-via', 'x-provider', 'x-model', 'x-fallback-trail',
+    'x-fallback-detail', 'x-fallback-attempts', 'x-freellm-cache', 'x-freellm-compress',
+    'x-freellm-routing-strategy', 'x-ratelimit-limit', 'x-ratelimit-remaining',
+    'x-ratelimit-reset', 'retry-after',
+  ];
+  app.use(cors((req, callback) => {
+    const urlPath = (req.url ?? '').split('?')[0];
+    if (WIRE_API_PATH_RE.test(urlPath)) {
+      callback(null, { origin: '*', exposedHeaders: WIRE_API_EXPOSED_HEADERS, maxAge: 86400 });
+      return;
+    }
+    callback(null, {
+      origin(origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) {
+        cb(null, !origin || allowedCorsOrigins.has(origin));
+      },
+    });
   }));
   // Two-tier JSON body limits. The LLM wire surfaces carry vision payloads —
   // base64 images inline in the body (~33% inflation; google.ts forwards
