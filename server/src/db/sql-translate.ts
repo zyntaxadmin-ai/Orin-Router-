@@ -123,6 +123,75 @@ function rewriteCall(sql: string, name: string, fn: (args: string) => string): s
   return out;
 }
 
+/** Replace the contents of '...' literals with filler so indices stay aligned but keywords inside strings are invisible. */
+function maskStrings(sql: string): string {
+  return outsideStringsKeep(sql);
+}
+function outsideStringsKeep(sql: string): string {
+  let out = '';
+  let i = 0;
+  while (i < sql.length) {
+    if (sql[i] === "'") {
+      let j = i + 1;
+      while (j < sql.length) {
+        if (sql[j] === "'" && sql[j + 1] === "'") { j += 2; continue; }
+        if (sql[j] === "'") break;
+        j++;
+      }
+      out += "'" + 'x'.repeat(Math.max(0, j - i - 1)) + "'";
+      i = j + 1;
+    } else { out += sql[i]; i++; }
+  }
+  return out;
+}
+
+/**
+ * SQLite sorts NULL as the smallest value (first for ASC, last for DESC); Postgres does the
+ * opposite. Make every ORDER BY item explicit so ordering matches what the app was written for.
+ */
+function addNullsOrdering(sql: string): string {
+  const masked = maskStrings(sql);
+  const edits: { pos: number; text: string }[] = [];
+  const re = /\bORDER\s+BY\b/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(masked))) {
+    const start = m.index + m[0].length;
+    let depth = 0;
+    let i = start;
+    for (; i < masked.length; i++) {
+      const c = masked[i];
+      if (c === '(') depth++;
+      else if (c === ')') { if (depth === 0) break; depth--; }
+      else if (depth === 0 && /\s/.test(masked[i - 1] ?? ' ') && /^(LIMIT|OFFSET|FOR\s+UPDATE|UNION|EXCEPT|INTERSECT|RETURNING)\b/i.test(masked.slice(i))) break;
+    }
+    const clause = masked.slice(start, i);
+    // split on top-level commas, remembering absolute offsets
+    let d = 0, segStart = 0;
+    const segs: [number, number][] = [];
+    for (let k = 0; k < clause.length; k++) {
+      const c = clause[k];
+      if (c === '(') d++;
+      else if (c === ')') d--;
+      else if (c === ',' && d === 0) { segs.push([segStart, k]); segStart = k + 1; }
+    }
+    segs.push([segStart, clause.length]);
+    for (const [a, b] of segs) {
+      const raw = clause.slice(a, b);
+      const trimmedEnd = raw.replace(/\s+$/, '').length;
+      const item = raw.slice(0, trimmedEnd);
+      if (!item.trim()) continue;
+      if (/\bNULLS\s+(FIRST|LAST)$/i.test(item)) continue;
+      if (/^\s*random\(\)\s*$/i.test(item)) continue;
+      const desc = /\bDESC$/i.test(item);
+      edits.push({ pos: start + a + trimmedEnd, text: desc ? ' NULLS LAST' : ' NULLS FIRST' });
+    }
+  }
+  edits.sort((x, y) => y.pos - x.pos);
+  let out = sql;
+  for (const e of edits) out = out.slice(0, e.pos) + e.text + out.slice(e.pos);
+  return out;
+}
+
 function rewriteDatesAndFunctions(sql: string): string {
   let s = sql;
   // datetime('now', 'start of month' | 'start of day')
@@ -138,6 +207,8 @@ function rewriteDatesAndFunctions(sql: string): string {
   s = s.replace(/datetime\(\s*'now'\s*\)/gi, () => `to_char(${NOW_UTC}, ${TS_FMT})`);
   // datetime(col)
   s = s.replace(/datetime\(\s*([A-Za-z_][\w.]*)\s*\)/gi, (_m, c) => `to_char((${c})::timestamp, ${TS_FMT})`);
+  // date(col) -> 'YYYY-MM-DD' (columns hold 'YYYY-MM-DD HH:MM:SS' text)
+  s = s.replace(/\bdate\(\s*([A-Za-z_][\w.]*)\s*\)/gi, (_m, c) => `left(${c}, 10)`);
   // strftime
   s = s.replace(/strftime\(\s*'%Y-%m'\s*,\s*'now'\s*\)/gi, () => `to_char(${NOW_UTC}, 'YYYY-MM')`);
   s = s.replace(/strftime\(\s*'%Y-%m'\s*,\s*([A-Za-z_][\w.]*)\s*\)/gi,
@@ -179,6 +250,7 @@ export function toPg(sqlite: string): TranslatedSql {
   s = s.replace(/^\s*INSERT\s+OR\s+IGNORE\s+INTO/i, () => { insertIgnore = true; return 'INSERT INTO'; });
 
   s = rewriteScalarMinMax(s);
+  s = addNullsOrdering(s);
 
   s = outsideStrings(s, (chunk) => chunk
     .replace(/\bRANDOM\(\)/gi, 'random()')
