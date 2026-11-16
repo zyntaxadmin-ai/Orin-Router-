@@ -9,6 +9,23 @@ type Sql = postgres.Sql<any> | postgres.TransactionSql<any>;
 const txStore = new AsyncLocalStorage<Sql>();
 
 /** Per-request DB counters (only populated when the app wraps a request in statsStore.run). */
+// In-flight query tracking: lets the app hold the serverless function open after the HTTP
+// response is sent until the request's trailing bookkeeping (usage counters, request log) is done.
+let dbInflight = 0;
+let dbLastActivity = Date.now();
+
+/** Resolves once no query has been running for `quietMs` (or after `maxMs` at the latest). */
+export function waitForDbIdle(quietMs = 1200, maxMs = 20000): Promise<void> {
+  const deadline = Date.now() + maxMs;
+  return new Promise((resolve) => {
+    const tick = () => {
+      if (Date.now() >= deadline || (dbInflight === 0 && Date.now() - dbLastActivity >= quietMs)) return resolve();
+      setTimeout(tick, 150);
+    };
+    tick();
+  });
+}
+
 export const statsStore = new AsyncLocalStorage<{ queries: number; dbMs: number }>();
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -54,7 +71,14 @@ export function createPgDb(url: string): Db {
   async function query(sqlite: string, params: unknown[]) {
     const t = toPg(sqlite);
     const started = Date.now();
-    const rows = await conn().unsafe(t.text, bindParams(params, t.names) as any[]);
+    dbInflight++;
+    let rows;
+    try {
+      rows = await conn().unsafe(t.text, bindParams(params, t.names) as any[]);
+    } finally {
+      dbInflight--;
+      dbLastActivity = Date.now();
+    }
     const st = statsStore.getStore();
     if (st) { st.queries++; st.dbMs += Date.now() - started; }
     if (DEBUG && Date.now() - started > 300) console.warn(`[db] slow query ${Date.now() - started}ms: ${t.text.replace(/\s+/g, ' ').slice(0, 140)}`);

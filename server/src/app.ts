@@ -34,7 +34,7 @@ import { urlTokenRouter } from './routes/url-tokens.js';
 import { moderationRouter } from './routes/moderation.js';
 import { requireAuth } from './middleware/requireAuth.js';
 import { initDb } from './db/index.js';
-import { statsStore } from './db/pg.js';
+import { statsStore, waitForDbIdle } from './db/pg.js';
 import { cronRouter } from './routes/cron.js';
 import { createHostGuard } from './middleware/allowed-hosts.js';
 import { createProxyRateLimiter, createAdminRateLimiter } from './middleware/rateLimit.js';
@@ -102,6 +102,18 @@ function isTrustworthyOrigin(req: express.Request): boolean {
   return isHttpsRequest(req) || LOOPBACK_HOST_RE.test(req.hostname ?? '');
 }
 
+let waitUntilFn: ((p: Promise<unknown>) => void) | null | undefined;
+async function getWaitUntil(): Promise<((p: Promise<unknown>) => void) | null> {
+  if (waitUntilFn !== undefined) return waitUntilFn;
+  try {
+    const mod: any = await import('@vercel/functions');
+    waitUntilFn = typeof mod.waitUntil === 'function' ? mod.waitUntil : null;
+  } catch {
+    waitUntilFn = null; // not on Vercel / package missing: nothing to hold
+  }
+  return waitUntilFn;
+}
+
 export function createApp(config?: Config) {
   const cfg = config ?? loadConfig();
   const app = express();
@@ -121,6 +133,19 @@ export function createApp(config?: Config) {
   // Serverless: connect to Postgres lazily (memoized) before anything touches the DB.
   app.use(async (_req, _res, next) => {
     try { await initDb(); next(); } catch (err) { next(err); }
+  });
+  // Vercel freezes the function as soon as the HTTP response is sent, but the proxy writes its
+  // usage counters and the request log AFTER the response (so they never reached the database,
+  // and Analytics stayed at 0). waitUntil keeps the invocation alive until the database has
+  // been quiet for a moment after the response closed.
+  app.use(async (_req, res, next) => {
+    const waitUntil = await getWaitUntil();
+    if (!waitUntil) return next();
+    let done!: () => void;
+    const hold = new Promise<void>((resolve) => { done = resolve; });
+    waitUntil(hold);
+    res.on('close', () => { waitForDbIdle(1200, 20000).then(done, done); });
+    next();
   });
   // DB_DEBUG=1: log how many queries each request made and how long they took in total.
   if (process.env.DB_DEBUG === '1') {

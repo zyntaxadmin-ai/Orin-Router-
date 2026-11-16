@@ -32,3 +32,17 @@ cronRouter.get('/dbping', async (_req: Request, res: Response) => {
   }
   res.json({ functionRegion: process.env.VERCEL_REGION ?? null, roundTripMs: times });
 });
+
+// GET /api/cron/dbstats — row counts only, to check that requests are being recorded.
+cronRouter.get('/dbstats', async (_req: Request, res: Response) => {
+  const db = getDb();
+  const n = async (sql: string) => Number(((await db.prepare(sql).get()) as { n: number }).n);
+  const last = (await db.prepare('SELECT MAX(created_at) AS t FROM requests').get()) as { t: string | null };
+  res.json({
+    requests: await n('SELECT COUNT(*) AS n FROM requests'),
+    requestHourly: await n('SELECT COUNT(*) AS n FROM request_hourly'),
+    requestAttempts: await n('SELECT COUNT(*) AS n FROM request_attempts'),
+    lastRequestAt: last.t,
+    serverTimeUtc: new Date().toISOString(),
+  });
+});
