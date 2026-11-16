@@ -166,6 +166,12 @@ export async function logRequest(
     return true;
   } catch (e) {
     console.error('Failed to log request:', e);
+    // Leave a trace in the database too (read it at /api/cron/dbstats): serverless logs are easy to miss.
+    try {
+      await getDb().prepare(
+        "INSERT INTO settings (key, value) VALUES ('last_log_error', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+      ).run(`${new Date().toISOString()} ${String((e as any)?.message ?? e).slice(0, 500)}`);
+    } catch { /* best effort */ }
     return false;
   }
 }

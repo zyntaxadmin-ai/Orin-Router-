@@ -38,7 +38,12 @@ cronRouter.get('/dbstats', async (_req: Request, res: Response) => {
   const db = getDb();
   const n = async (sql: string) => Number(((await db.prepare(sql).get()) as { n: number }).n);
   const last = (await db.prepare('SELECT MAX(created_at) AS t FROM requests').get()) as { t: string | null };
+  const err = (await db.prepare("SELECT value FROM settings WHERE key = 'last_log_error'").get()) as { value: string } | undefined;
+  let keepAlive = false;
+  try { keepAlive = typeof ((await import('@vercel/functions')) as any).waitUntil === 'function'; } catch { /* not installed */ }
   res.json({
+    keepAlive,
+    lastLogError: err?.value ?? null,
     requests: await n('SELECT COUNT(*) AS n FROM requests'),
     requestHourly: await n('SELECT COUNT(*) AS n FROM request_hourly'),
     requestAttempts: await n('SELECT COUNT(*) AS n FROM request_attempts'),

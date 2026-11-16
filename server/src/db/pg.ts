@@ -59,7 +59,11 @@ export function createPgDb(url: string): Db {
     onnotice: () => {},
     types: {
       // COUNT()/SUM() come back as bigint/numeric; the app expects plain numbers.
-      bigint: { to: 20, from: [20], parse: (x: string) => Number(x), serialize: (x: unknown) => String(x) },
+      bigint: {
+        to: 20, from: [20], parse: (x: string) => Number(x),
+        // SQLite accepted fractional/NaN numbers in INTEGER columns; Postgres rejects them.
+        serialize: (x: unknown) => (typeof x === 'number' ? String(Number.isFinite(x) ? Math.trunc(x) : 0) : String(x)),
+      },
       numeric: { to: 1700, from: [1700], parse: (x: string) => Number(x), serialize: (x: unknown) => String(x) },
     },
   });
