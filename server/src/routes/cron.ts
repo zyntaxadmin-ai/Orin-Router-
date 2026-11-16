@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { checkAllKeys } from '../services/health.js';
+import { syncCatalog } from '../services/catalog-sync.js';
 import { getDb } from '../db/index.js';
 
 export const cronRouter = Router();
@@ -15,6 +16,22 @@ cronRouter.get('/health', async (req: Request, res: Response) => {
   try {
     await checkAllKeys();
     res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: { message: String(err?.message ?? err) } });
+  }
+});
+
+// GET /api/cron/catalog — pulls the signed free (monthly) catalog and applies it, so new
+// providers/models reach the web build without the desktop app's background timer.
+cronRouter.get('/catalog', async (req: Request, res: Response) => {
+  const secret = process.env.CRON_SECRET;
+  if (secret && req.headers.authorization !== `Bearer ${secret}`) {
+    res.status(401).json({ error: { message: 'unauthorized' } });
+    return;
+  }
+  try {
+    const result = await syncCatalog();
+    res.status(result.ok ? 200 : 502).json(result);
   } catch (err: any) {
     res.status(500).json({ error: { message: String(err?.message ?? err) } });
   }
