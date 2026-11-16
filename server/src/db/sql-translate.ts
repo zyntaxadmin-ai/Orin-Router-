@@ -7,6 +7,8 @@
  * string comparisons used all over the code keep working unchanged.
  */
 
+import { TABLE_COLUMNS } from './schema-columns.js';
+
 const TS_FMT = `'YYYY-MM-DD HH24:MI:SS'`;
 const NOW_UTC = `(now() at time zone 'utc')`;
 
@@ -138,7 +140,7 @@ function outsideStringsKeep(sql: string): string {
         if (sql[j] === "'") break;
         j++;
       }
-      out += "'" + 'x'.repeat(Math.max(0, j - i - 1)) + "'";
+      out += "'" + ' '.repeat(Math.max(0, j - i - 1)) + "'";
       i = j + 1;
     } else { out += sql[i]; i++; }
   }
@@ -184,6 +186,76 @@ function addNullsOrdering(sql: string): string {
       if (/^\s*random\(\)\s*$/i.test(item)) continue;
       const desc = /\bDESC$/i.test(item);
       edits.push({ pos: start + a + trimmedEnd, text: desc ? ' NULLS LAST' : ' NULLS FIRST' });
+    }
+  }
+  edits.sort((x, y) => y.pos - x.pos);
+  let out = sql;
+  for (const e of edits) out = out.slice(0, e.pos) + e.text + out.slice(e.pos);
+  return out;
+}
+
+/**
+ * Postgres rejects an unqualified column on the right-hand side of ON CONFLICT ... DO UPDATE SET
+ * ("column reference is ambiguous": it could be the existing row or `excluded`). SQLite accepts
+ * `total = total + 1`. Qualify those references with the target table name.
+ */
+function qualifyUpsertColumns(sql: string): string {
+  const masked = maskStrings(sql);
+  const ins = /^\s*INSERT\s+INTO\s+"?(\w+)"?/i.exec(masked);
+  if (!ins) return sql;
+  const table = ins[1];
+  const cols = TABLE_COLUMNS[table];
+  if (!cols) return sql;
+  const oc = /\bON\s+CONFLICT\b[\s\S]*?\bDO\s+UPDATE\s+SET\b/i.exec(masked);
+  if (!oc) return sql;
+  const start = oc.index + oc[0].length;
+
+  // find the end (a top-level RETURNING) and a top-level WHERE inside the SET clause
+  let end = masked.length;
+  let whereAt = -1;
+  let depth = 0;
+  for (let i = start; i < masked.length; i++) {
+    const c = masked[i];
+    if (c === '(') depth++;
+    else if (c === ')') depth--;
+    else if (depth === 0 && /\s/.test(masked[i - 1] ?? ' ')) {
+      const rest = masked.slice(i);
+      if (/^RETURNING\b/i.test(rest)) { end = i; break; }
+      if (whereAt < 0 && /^WHERE\b/i.test(rest)) whereAt = i;
+    }
+  }
+  const setEnd = whereAt >= 0 ? whereAt : end;
+
+  const ranges: [number, number][] = [];
+  // each assignment: rhs starts after the first top-level '='
+  let segStart = start;
+  depth = 0;
+  const pushAssignment = (a: number, b: number) => {
+    let d = 0;
+    for (let i = a; i < b; i++) {
+      const c = masked[i];
+      if (c === '(') d++;
+      else if (c === ')') d--;
+      else if (c === '=' && d === 0) { ranges.push([i + 1, b]); return; }
+    }
+  };
+  for (let i = start; i < setEnd; i++) {
+    const c = masked[i];
+    if (c === '(') depth++;
+    else if (c === ')') depth--;
+    else if (c === ',' && depth === 0) { pushAssignment(segStart, i); segStart = i + 1; }
+  }
+  pushAssignment(segStart, setEnd);
+  if (whereAt >= 0) ranges.push([whereAt + 5, end]);
+
+  const edits: { pos: number; text: string }[] = [];
+  const idRe = /(?<![\w.@:$"])([A-Za-z_][A-Za-z0-9_]*)(?![\w(])(?!\s*\()/g;
+  for (const [a, b] of ranges) {
+    const chunk = masked.slice(a, b);
+    let m: RegExpExecArray | null;
+    idRe.lastIndex = 0;
+    while ((m = idRe.exec(chunk))) {
+      if (cols.has(m[1].toLowerCase())) edits.push({ pos: a + m.index, text: `${table}.` });
     }
   }
   edits.sort((x, y) => y.pos - x.pos);
@@ -268,6 +340,8 @@ export function toPg(sqlite: string): TranslatedSql {
     s += ' RETURNING id';
     returnsId = true;
   }
+
+  s = qualifyUpsertColumns(s);
 
   // @name -> ? (remember the order so an object argument can be mapped)
   const names: string[] = [];
