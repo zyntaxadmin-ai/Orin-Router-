@@ -36,6 +36,7 @@ import { requireAuth } from './middleware/requireAuth.js';
 import { initDb } from './db/index.js';
 import { statsStore, waitForDbIdle } from './db/pg.js';
 import { cronRouter } from './routes/cron.js';
+import { catalogRouter } from './routes/catalog.js';
 import { createHostGuard } from './middleware/allowed-hosts.js';
 import { createProxyRateLimiter, createAdminRateLimiter } from './middleware/rateLimit.js';
 
@@ -350,6 +351,7 @@ export function createApp(config?: Config) {
   // encrypted provider keys and every routing setting, so the unified /v1 key
   // must not open this surface.
   app.use('/api/cron', cronRouter);
+  app.use('/api/catalog', requireAuth, catalogRouter);
   app.use('/api/cache', requireAuth, cacheRouter);
   app.use('/api/compression', requireAuth, compressionRouter);
 

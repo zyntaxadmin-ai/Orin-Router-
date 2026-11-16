@@ -6,7 +6,6 @@ import path from 'path';
 import { getDb } from '../db/index.js';
 import { resolveProvider, getAllProviders } from '../providers/index.js';
 import { OpenAICompatProvider, isAnonymousCredential } from '../providers/openai-compat.js';
-import { getSyncState } from '../services/catalog-sync.js';
 import { encrypt, decrypt, maskKey } from '../lib/crypto.js';
 import { parseKeysFromFile, stripJsoncComments, stripTrailingCommas } from '../lib/key-parser.js';
 import { assessProviderUrl } from '../lib/url-guard.js';
@@ -329,21 +328,10 @@ async function noModelsNotice(platform: string): Promise<string | undefined> {
   const customRoute = baseUrl
     ? `add ${platform} as a custom OpenAI-compatible provider with base URL ${baseUrl}`
     : null;
-  const premium = (await getSyncState()).appliedTier === 'live';
-  if (premium) {
-    return (
-      `Key saved, but your Premium catalog does not list any ${platform} models yet. ` +
-      `Try Check for updates on the Premium page to pull the latest catalog` +
-      (customRoute ? `, or ${customRoute}.` : '.')
-    );
-  }
-  return (
-    `Key saved, but no ${platform} models are in your current catalog yet. ` +
-    `Newer providers are published to the premium catalog first and appear ` +
-    `for free-tier installs once they age into the monthly catalog. ` +
-    `Add a Premium license key to use them now` +
-    (customRoute ? `, or ${customRoute}.` : '.')
-  );
+  const base = `Key saved, but no ${platform} models are in your current catalog yet. `;
+  return base +
+    `New providers reach the catalog on the next sync (runs twice a day)` +
+    (customRoute ? `, or you can ${customRoute} right now.` : '.');
 }
 
 // Provider checklist (#543): every registered provider with whether the user

@@ -14,7 +14,6 @@ import { QuotaSignalsSection } from '@/components/keys/quota-signals-section'
 import { UnifiedKeySection } from '@/components/keys/unified-key-section'
 import { ClientProfilesSection } from '@/components/keys/client-profiles-section'
 import { ProxySettingsSection } from '@/components/keys/proxy-settings-section'
-import { BackupsSection } from '@/components/keys/backups-section'
 import { AnthropicSection } from '@/components/keys/anthropic-section'
 import { ProviderList } from '@/components/keys/provider-list'
 import { ProviderChecklistSection } from '@/components/keys/provider-checklist-section'
@@ -118,7 +117,6 @@ export default function KeysPage() {
             <UnifiedKeySection />
             <ClientProfilesSection />
             <ProxySettingsSection />
-            <BackupsSection />
           </>
         )}
 

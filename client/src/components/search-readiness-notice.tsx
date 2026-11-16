@@ -22,7 +22,6 @@ export function SearchReadinessNotice({ data, failed, loading, available, error,
       {syncProblem && syncProblem !== hint && <p className="break-words text-xs text-destructive">{syncProblem}</p>}
       <div className="flex flex-wrap gap-4 text-xs underline">
         <Link to="/keys">{t('nav.keys')}</Link>
-        <Link to="/premium">{t('premium.catalogFeed')}</Link>
         <button type="button" onClick={onRetry}>{t('updates.tryAgain')}</button>
       </div>
     </div>

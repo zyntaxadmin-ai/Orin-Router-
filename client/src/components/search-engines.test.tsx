@@ -118,7 +118,6 @@ it('explains configured keys missing from the catalog without enrolling engines'
   expect(container.textContent).toContain('30 days')
   expect(container.textContent).toContain('test-catalog')
   expect(container.textContent).toContain('signature verification failed')
-  expect(container.querySelector('a[href="/premium"]')).not.toBeNull()
   expect(container.querySelector('a[href="/keys"]')).not.toBeNull()
   expect(vi.mocked(apiFetch).mock.calls.every(([, init]) => !init?.method || init.method === 'GET')).toBe(true)
 })
