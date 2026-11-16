@@ -111,7 +111,7 @@ async function getWaitUntil(): Promise<((p: Promise<unknown>) => void) | null> {
   } catch {
     waitUntilFn = null; // not on Vercel / package missing: nothing to hold
   }
-  return waitUntilFn;
+  return waitUntilFn ?? null;
 }
 
 export function createApp(config?: Config) {
