@@ -5,14 +5,21 @@ import { getDb } from '../db/index.js';
 
 export const cronRouter = Router();
 
-// Vercel Cron (or any external pinger) hits this to run the key health pass that the
-// desktop build ran on a timer. If CRON_SECRET is set, Vercel sends it as a Bearer token.
-cronRouter.get('/health', async (req: Request, res: Response) => {
+// Cron endpoints are public URLs; when CRON_SECRET is set (Vercel then sends it as a
+// Bearer token on cron calls) every route here requires it.
+function cronAuthorized(req: Request, res: Response): boolean {
   const secret = process.env.CRON_SECRET;
   if (secret && req.headers.authorization !== `Bearer ${secret}`) {
     res.status(401).json({ error: { message: 'unauthorized' } });
-    return;
+    return false;
   }
+  return true;
+}
+
+// Vercel Cron (or any external pinger) hits this to run the key health pass that the
+// desktop build ran on a timer. If CRON_SECRET is set, Vercel sends it as a Bearer token.
+cronRouter.get('/health', async (req: Request, res: Response) => {
+  if (!cronAuthorized(req, res)) return;
   try {
     await checkAllKeys();
     res.json({ ok: true });
@@ -24,11 +31,7 @@ cronRouter.get('/health', async (req: Request, res: Response) => {
 // GET /api/cron/catalog — pulls the signed free (monthly) catalog and applies it, so new
 // providers/models reach the web build without the desktop app's background timer.
 cronRouter.get('/catalog', async (req: Request, res: Response) => {
-  const secret = process.env.CRON_SECRET;
-  if (secret && req.headers.authorization !== `Bearer ${secret}`) {
-    res.status(401).json({ error: { message: 'unauthorized' } });
-    return;
-  }
+  if (!cronAuthorized(req, res)) return;
   try {
     const result = await syncCatalog();
     res.status(result.ok ? 200 : 502).json(result);
@@ -39,7 +42,8 @@ cronRouter.get('/catalog', async (req: Request, res: Response) => {
 
 // GET /api/cron/dbping — measures the round trip from this function to the database.
 // ~1-10 ms = same region, 100+ ms = the function and the database are far apart.
-cronRouter.get('/dbping', async (_req: Request, res: Response) => {
+cronRouter.get('/dbping', async (req: Request, res: Response) => {
+  if (!cronAuthorized(req, res)) return;
   const db = getDb();
   const times: number[] = [];
   for (let i = 0; i < 6; i++) {
@@ -51,7 +55,8 @@ cronRouter.get('/dbping', async (_req: Request, res: Response) => {
 });
 
 // GET /api/cron/dbstats — row counts only, to check that requests are being recorded.
-cronRouter.get('/dbstats', async (_req: Request, res: Response) => {
+cronRouter.get('/dbstats', async (req: Request, res: Response) => {
+  if (!cronAuthorized(req, res)) return;
   const db = getDb();
   const n = async (sql: string) => Number(((await db.prepare(sql).get()) as { n: number }).n);
   const last = (await db.prepare('SELECT MAX(created_at) AS t FROM requests').get()) as { t: string | null };

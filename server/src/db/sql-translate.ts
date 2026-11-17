@@ -327,6 +327,8 @@ export function toPg(sqlite: string): TranslatedSql {
   s = outsideStrings(s, (chunk) => chunk
     .replace(/\bRANDOM\(\)/gi, 'random()')
     .replace(/\browid\b/gi, 'ctid')
+    // SQLite's "no limit" idiom; Postgres rejects a negative LIMIT but OFFSET alone is equivalent.
+    .replace(/\bLIMIT\s+-1\s+OFFSET\b/gi, 'OFFSET')
     .replace(/(?<![A-Za-z_])LIKE\b/g, 'ILIKE')
     // Postgres folds unquoted aliases to lower case; keep camelCase aliases intact.
     .replace(/\bAS\s+((?=[A-Za-z0-9_]*[a-z])(?=[A-Za-z0-9_]*[A-Z])[A-Za-z_][A-Za-z0-9_]*)\b/g, 'AS "$1"'));
