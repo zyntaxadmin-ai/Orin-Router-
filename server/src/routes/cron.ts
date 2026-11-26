@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Router, type Request, type Response } from 'express';
 import { checkAllKeys } from '../services/health.js';
 import { syncCatalog } from '../services/catalog-sync.js';
@@ -5,11 +6,26 @@ import { getDb } from '../db/index.js';
 
 export const cronRouter = Router();
 
-// Cron endpoints are public URLs; when CRON_SECRET is set (Vercel then sends it as a
-// Bearer token on cron calls) every route here requires it.
+// Cron endpoints are public URLs. When CRON_SECRET is set (Vercel then sends it as a
+// Bearer token on cron calls) every route here requires it. In production the secret is
+// mandatory: without it anyone could trigger provider health checks (which spend quota)
+// and read database stats, so the routes refuse to run instead of failing open.
+function safeEqual(a: string, b: string): boolean {
+  const ha = crypto.createHash('sha256').update(a).digest();
+  const hb = crypto.createHash('sha256').update(b).digest();
+  return crypto.timingSafeEqual(ha, hb);
+}
+
 function cronAuthorized(req: Request, res: Response): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (secret && req.headers.authorization !== `Bearer ${secret}`) {
+  const secret = (process.env.CRON_SECRET ?? '').trim();
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
+      res.status(503).json({ error: { message: 'CRON_SECRET is not configured; set it in the environment to enable cron routes.' } });
+      return false;
+    }
+    return true; // local development
+  }
+  if (!safeEqual(req.headers.authorization ?? '', `Bearer ${secret}`)) {
     res.status(401).json({ error: { message: 'unauthorized' } });
     return false;
   }

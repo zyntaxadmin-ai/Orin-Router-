@@ -75,7 +75,7 @@ export async function voiceGatewaySpeech(platform: 'typecast' | 'cartesia', mode
   const headers: Record<string, string> = platform === 'typecast' ? { 'X-API-KEY': key } : { Authorization: `Bearer ${key}`, 'Cartesia-Version': CARTESIA_VERSION };
   const body = platform === 'typecast'
     ? { model, voice_id: voice, text: p.input, prompt: { emotion_type: 'preset', emotion_preset: 'normal' }, output: { audio_format: 'wav' } }
-    : { voice: voice, voice, transcript: p.input, language: 'en', output_format: { container: 'wav', encoding: 'pcm_s16le', sample_rate: 44100 } };
+    : { model_id: model, voice: { mode: 'id', id: voice }, transcript: p.input, language: 'en', output_format: { container: 'wav', encoding: 'pcm_s16le', sample_rate: 44100 } };
   const audio = await request(platform, platform === 'typecast' ? 'https://api.typecast.ai/v1/text-to-speech' : 'https://api.cartesia.ai/tts/bytes', {
     method: 'POST', headers: { ...headers, 'Content-Type': 'application/json', Accept: 'audio/wav' }, body: JSON.stringify(body),
   }, 20 * 1024 * 1024);

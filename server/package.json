@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/dev.ts",
-    "build": "tsc --noEmitOnError false || echo \"tsc reported type errors; JS was still emitted\"",
-    "start": "node dist/index.js",
+    "build": "tsc",
+    "start": "node dist/dev.js",
     "lint": "eslint .",
     "db:init": "tsx src/scripts/db-init.ts"
   },

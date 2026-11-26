@@ -95,6 +95,31 @@ CREATE TABLE embedding_models (
       UNIQUE(platform, model_id)
     );
 
+CREATE TABLE "models" (
+      id BIGSERIAL PRIMARY KEY,
+      platform TEXT NOT NULL,
+      model_id TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      intelligence_rank BIGINT NOT NULL,
+      speed_rank BIGINT NOT NULL,
+      size_label TEXT NOT NULL DEFAULT '',
+      rpm_limit BIGINT,
+      rpd_limit BIGINT,
+      tpm_limit BIGINT,
+      tpd_limit BIGINT,
+      monthly_token_budget TEXT NOT NULL DEFAULT '',
+      context_window BIGINT,
+      enabled BIGINT NOT NULL DEFAULT 1,
+      supports_vision BIGINT NOT NULL DEFAULT 0,
+      key_id BIGINT,
+      supports_tools BIGINT NOT NULL DEFAULT 0,
+      paid_input_per_m DOUBLE PRECISION,
+      paid_output_per_m DOUBLE PRECISION,
+      source TEXT NOT NULL DEFAULT 'catalog',
+      endpoint_scope TEXT NOT NULL DEFAULT '',
+      UNIQUE(platform, model_id, endpoint_scope)
+    );
+
 CREATE TABLE fallback_config (
       id BIGSERIAL PRIMARY KEY,
       model_db_id BIGINT NOT NULL REFERENCES models(id),
@@ -166,31 +191,6 @@ CREATE TABLE model_probe_status (
     PRIMARY KEY (platform, model_id, endpoint_scope, key_id)
   );
 
-CREATE TABLE "models" (
-      id BIGSERIAL PRIMARY KEY,
-      platform TEXT NOT NULL,
-      model_id TEXT NOT NULL,
-      display_name TEXT NOT NULL,
-      intelligence_rank BIGINT NOT NULL,
-      speed_rank BIGINT NOT NULL,
-      size_label TEXT NOT NULL DEFAULT '',
-      rpm_limit BIGINT,
-      rpd_limit BIGINT,
-      tpm_limit BIGINT,
-      tpd_limit BIGINT,
-      monthly_token_budget TEXT NOT NULL DEFAULT '',
-      context_window BIGINT,
-      enabled BIGINT NOT NULL DEFAULT 1,
-      supports_vision BIGINT NOT NULL DEFAULT 0,
-      key_id BIGINT,
-      supports_tools BIGINT NOT NULL DEFAULT 0,
-      paid_input_per_m DOUBLE PRECISION,
-      paid_output_per_m DOUBLE PRECISION,
-      source TEXT NOT NULL DEFAULT 'catalog',
-      endpoint_scope TEXT NOT NULL DEFAULT '',
-      UNIQUE(platform, model_id, endpoint_scope)
-    );
-
 CREATE TABLE playground_conversations (
       id BIGSERIAL PRIMARY KEY,
       title TEXT NOT NULL DEFAULT '',
@@ -199,15 +199,6 @@ CREATE TABLE playground_conversations (
       system_prompt TEXT,
       created_at_ms BIGINT NOT NULL,
       updated_at_ms BIGINT NOT NULL
-    );
-
-CREATE TABLE profile_models (
-      id BIGSERIAL PRIMARY KEY,
-      profile_id BIGINT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-      model_db_id BIGINT NOT NULL REFERENCES models(id) ON DELETE CASCADE,
-      priority BIGINT NOT NULL,
-      enabled BIGINT NOT NULL DEFAULT 1,
-      UNIQUE(profile_id, model_db_id)
     );
 
 CREATE TABLE profiles (
@@ -222,6 +213,15 @@ CREATE TABLE profiles (
       layout_config TEXT,
       created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc','YYYY-MM-DD HH24:MI:SS'))
     , auto_include_new_models BIGINT NOT NULL DEFAULT 1, routing_strategy TEXT);
+
+CREATE TABLE profile_models (
+      id BIGSERIAL PRIMARY KEY,
+      profile_id BIGINT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      model_db_id BIGINT NOT NULL REFERENCES models(id) ON DELETE CASCADE,
+      priority BIGINT NOT NULL,
+      enabled BIGINT NOT NULL DEFAULT 1,
+      UNIQUE(profile_id, model_db_id)
+    );
 
 CREATE TABLE provider_quota_observations (
       id TEXT PRIMARY KEY,
@@ -263,13 +263,6 @@ CREATE TABLE provider_quota_state (
       PRIMARY KEY (platform, key_id, quota_pool_key, metric)
     );
 
-CREATE TABLE quirk_targets (
-      id BIGSERIAL PRIMARY KEY,
-      quirk_id BIGINT NOT NULL REFERENCES quirks(id) ON DELETE CASCADE,
-      platform TEXT,
-      model_glob TEXT
-    );
-
 CREATE TABLE quirks (
       id BIGSERIAL PRIMARY KEY,
       slug TEXT NOT NULL UNIQUE,
@@ -278,6 +271,13 @@ CREATE TABLE quirks (
       severity TEXT NOT NULL DEFAULT 'info',
       created_at_ms BIGINT NOT NULL,
       updated_at_ms BIGINT NOT NULL
+    );
+
+CREATE TABLE quirk_targets (
+      id BIGSERIAL PRIMARY KEY,
+      quirk_id BIGINT NOT NULL REFERENCES quirks(id) ON DELETE CASCADE,
+      platform TEXT,
+      model_glob TEXT
     );
 
 CREATE TABLE rate_limit_cooldowns (
@@ -300,6 +300,19 @@ CREATE TABLE rate_limit_usage (
       created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc','YYYY-MM-DD HH24:MI:SS'))
     );
 
+CREATE TABLE requests (
+      id BIGSERIAL PRIMARY KEY,
+      platform TEXT NOT NULL,
+      model_id TEXT NOT NULL,
+      key_id BIGINT,
+      status TEXT NOT NULL,
+      input_tokens BIGINT NOT NULL DEFAULT 0,
+      output_tokens BIGINT NOT NULL DEFAULT 0,
+      latency_ms BIGINT NOT NULL DEFAULT 0,
+      error TEXT,
+      created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc','YYYY-MM-DD HH24:MI:SS'))
+    , ttfb_ms BIGINT, requested_model TEXT, request_type TEXT NOT NULL DEFAULT 'chat', client_ip TEXT, client_user_agent TEXT, served_model TEXT, client_agent TEXT, caller TEXT, model_db_id BIGINT, failure_attribution TEXT, media_model_db_id BIGINT);
+
 CREATE TABLE request_attempts (
       id BIGSERIAL PRIMARY KEY,
       request_id BIGINT NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
@@ -320,19 +333,6 @@ CREATE TABLE request_hourly (
         input_tokens BIGINT NOT NULL DEFAULT 0,
         output_tokens BIGINT NOT NULL DEFAULT 0
       );
-
-CREATE TABLE requests (
-      id BIGSERIAL PRIMARY KEY,
-      platform TEXT NOT NULL,
-      model_id TEXT NOT NULL,
-      key_id BIGINT,
-      status TEXT NOT NULL,
-      input_tokens BIGINT NOT NULL DEFAULT 0,
-      output_tokens BIGINT NOT NULL DEFAULT 0,
-      latency_ms BIGINT NOT NULL DEFAULT 0,
-      error TEXT,
-      created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc','YYYY-MM-DD HH24:MI:SS'))
-    , ttfb_ms BIGINT, requested_model TEXT, request_type TEXT NOT NULL DEFAULT 'chat', client_ip TEXT, client_user_agent TEXT, served_model TEXT, client_agent TEXT, caller TEXT, model_db_id BIGINT, failure_attribution TEXT, media_model_db_id BIGINT);
 
 CREATE TABLE response_cache (
       cache_key TEXT PRIMARY KEY,
@@ -373,6 +373,13 @@ CREATE TABLE server_logs (
       created_at_ms BIGINT NOT NULL
     );
 
+CREATE TABLE users (
+      id BIGSERIAL PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc','YYYY-MM-DD HH24:MI:SS'))
+    );
+
 CREATE TABLE sessions (
       token_hash TEXT PRIMARY KEY,
       user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -393,13 +400,6 @@ CREATE TABLE url_tokens (
       created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc','YYYY-MM-DD HH24:MI:SS')),
       last_used_at TEXT,
       revoked_at TEXT
-    );
-
-CREATE TABLE users (
-      id BIGSERIAL PRIMARY KEY,
-      email TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc','YYYY-MM-DD HH24:MI:SS'))
     );
 
 CREATE INDEX idx_api_keys_platform ON api_keys(platform);

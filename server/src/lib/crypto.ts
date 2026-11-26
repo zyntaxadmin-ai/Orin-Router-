@@ -16,13 +16,6 @@ const KEY_BYTES = 32;
 const KEY_HEX_LEN = KEY_BYTES * 2;
 const PLACEHOLDER_KEY = 'your-64-char-hex-key-here';
 
-// The dev-fallback key lives in a file next to the DB, NOT in the DB itself.
-// Storing it beside the ciphertext it protects (the old `settings` row) meant
-// encryption-at-rest protected nothing for a default install: whoever copied
-// the DB also copied the key. The file sits in the same directory but is a
-// separate artifact, and is chmod 0600 so it isn't world-readable.
-const KEY_FILE_NAME = '.encryption-key';
-
 function parseHexKey(value: string, source: 'env' | 'db' | 'file'): Buffer {
   if (value.length !== KEY_HEX_LEN || !/^[0-9a-fA-F]+$/.test(value)) {
     throw new Error(
@@ -33,22 +26,11 @@ function parseHexKey(value: string, source: 'env' | 'db' | 'file'): Buffer {
   return Buffer.from(value, 'hex');
 }
 
-// Outside production we auto-generate and persist a key so a fresh clone
-// (`npm run dev`) boots without manual setup — the placeholder ENCRYPTION_KEY
-// in .env.example would otherwise crash the server on boot, which surfaces in
-// the client as "Can't reach the server". Production still requires an explicit
-// env key: a generated key lives only on the local disk and silently losing it
-// would make every stored API key undecryptable.
-function isDevFallbackAllowed(): boolean {
-  return process.env.NODE_ENV !== 'production';
-}
-
 function missingKeyError(): Error {
   return new Error(
     'ENCRYPTION_KEY is required in production for API key encryption. ' +
     `Set a ${KEY_HEX_LEN}-char hex key (generate one with: ` +
-    `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"). ` +
-    'Outside production a local key file is auto-generated next to the database.',
+    `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))").`,
   );
 }
 
